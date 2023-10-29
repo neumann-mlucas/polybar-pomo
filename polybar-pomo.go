@@ -10,12 +10,12 @@ import (
 )
 
 const (
-	TomatoEmoji  = "\U0001F345"       // Emoji representation for work status
-	RestEmoji    = "\U0001F3D6"       // Emoji representation for rest status
-	PauseEmoji   = "\U000023F8"       // Emoji representation for pause status
-	WorkDuration = 10 * time.Second   // Duration for work period
-	RestDuration = 5 * time.Second    // Duration for rest period
-	SocketPath   = "/tmp/godoro.sock" // Unix socket path
+	TomatoEmoji  = "\U0001F345"        // Emoji representation for work status
+	RestEmoji    = "\U0001F3D6"        // Emoji representation for rest status
+	PauseEmoji   = "\U000023F8"        // Emoji representation for pause status
+	WorkDuration = 25 * time.Minute    // Duration for work period
+	RestDuration = 5 * time.Minute     // Duration for rest period
+	SocketPath   = "/tmp/polybar-pomo" // Unix socket path
 )
 
 // PomodoroStatus represents the status of the pomodoro timer
