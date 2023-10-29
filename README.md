@@ -2,14 +2,14 @@
 
 Simple Pomodoro Widget for [Polybar](https://github.com/polybar/polybar)
 
-# Requirements
+### Requirements
 
 Should work in any Linux OS with the following packages:
 
 - `go`
 - `openbsd-netcat` or `socat`
 
-# Installation
+### Installation
 
 ```bash
 git clone https://github.com/neumann-mlucas/polybar-pomo
@@ -19,7 +19,7 @@ go build polybar-pomo.go
 cp polybar-pomo $HOME/.config/polybar
 ```
 
-# Polybar Configuration Example
+### Polybar Configuration Example
 
 Using `netcat`:
 
