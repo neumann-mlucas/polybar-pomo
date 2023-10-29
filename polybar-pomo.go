@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"net"
 	"os"
@@ -10,12 +11,15 @@ import (
 )
 
 const (
-	TomatoEmoji  = "\U0001F345"        // Emoji representation for work status
-	RestEmoji    = "\U0001F3D6"        // Emoji representation for rest status
-	PauseEmoji   = "\U000023F8"        // Emoji representation for pause status
-	WorkDuration = 25 * time.Minute    // Duration for work period
-	RestDuration = 5 * time.Minute     // Duration for rest period
-	SocketPath   = "/tmp/polybar-pomo" // Unix socket path
+	TomatoEmoji = "\U0001F345"        // Emoji representation for work status
+	RestEmoji   = "\U0001F3D6"        // Emoji representation for rest status
+	PauseEmoji  = "\U000023F8"        // Emoji representation for pause status
+	SocketPath  = "/tmp/polybar-pomo" // Unix socket path
+)
+
+var (
+	WorkDuration time.Duration
+	RestDuration time.Duration
 )
 
 // PomodoroStatus represents the status of the pomodoro timer
@@ -118,6 +122,16 @@ func (state *PomodoroState) Toggle() {
 	state.End = time.Now().Add(duration)
 }
 
+// Inc increments the pomodoro timer by the given amount
+func (state *PomodoroState) Inc(increment time.Duration) {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+
+	remainingTime := state.End.Sub(time.Now()) + increment
+	state.Timer.Reset(remainingTime)
+	state.End = state.End.Add(increment)
+}
+
 // GetDuration returns the duration for the given pomodoro status
 func GetDuration(status PomodoroStatus) time.Duration {
 	return map[PomodoroStatus]time.Duration{
@@ -142,12 +156,25 @@ func HandleRequest(conn *net.UnixConn, state *PomodoroState) {
 		state.Pause()
 	case "toggle":
 		state.Toggle()
+	case "inc":
+		state.Inc(5 * time.Second)
+	case "dec":
+		state.Inc(-5 * time.Second)
 	}
 }
 
 func main() {
+	// Parse CMD arguments
+	wFlag := flag.Int("w", 25, "Work Period Duration")
+	rFlag := flag.Int("r", 5, "Rest Period Duration")
+	flag.Parse()
+
+	// Set Work and Rest Time Perimeters
+	WorkDuration = time.Duration(*wFlag) * time.Minute
+	RestDuration = time.Duration(*rFlag) * time.Minute
+
 	// Create a new PomodoroState instance with initial status
-	state := NewPomodoro(Work, false)
+	state := NewPomodoro(Work, true)
 
 	// Start a new goroutine to continuously update the PomodoroState.
 	go state.Update()
@@ -165,6 +192,7 @@ func main() {
 		return
 	}
 	defer listener.Close()
+	defer os.Remove(SocketPath)
 
 	// Goroutine function to handle incoming Unix socket connections
 	go func() {

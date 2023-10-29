@@ -55,7 +55,7 @@ scroll-up = echo "inc" | socat - UNIX-CONNECT:/tmp/polybar-pomo
 scroll-down = echo "dec" | socat - UNIX-CONNECT:/tmp/polybar-pomo
 ```
 
-#### [WIP] Change Default Work and Rest Times
+#### Change Default Work and Rest Times
 
 Pass `-w` (work time) and `-r` (rest time) in the exec line in your Polybar config.
 
