@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 )
@@ -178,6 +179,7 @@ func main() {
 	state := NewPomodoro(Work, true)
 
 	var inc time.Duration
+	cmd := exec.Command("notify-send", "-t", "5000", "Pomodoro", "Timer reached zero")
 
 	// Main loop to update state and display pomodoro time
 	for {
@@ -189,6 +191,7 @@ func main() {
 		case <-state.Timer.C:
 			if !state.Paused {
 				state.Toggle()
+				cmd.Run()
 			}
 		case <-pauseChannel:
 			state.Pause()
