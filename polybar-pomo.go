@@ -6,7 +6,6 @@ import (
 	"net"
 	"os"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -32,12 +31,11 @@ const (
 
 // PomodoroState holds the state of the pomodoro timer
 type PomodoroState struct {
-	Status PomodoroStatus
-	Timer  *time.Timer
 	End    time.Time
-	Ticker *time.Ticker
 	Paused bool
-	mu     sync.Mutex
+	Status PomodoroStatus
+	Ticker *time.Ticker
+	Timer  *time.Timer
 }
 
 // NewPomodoro initializes a new PomodoroState instance with given status and pause state
@@ -53,17 +51,12 @@ func NewPomodoro(status PomodoroStatus, paused bool) *PomodoroState {
 
 	if paused {
 		state.Timer.Stop()
-	} else {
-		state.Ticker.Stop()
 	}
 	return state
 }
 
 // String returns a formatted string representing the pomodoro timer status
 func (state *PomodoroState) String() string {
-	state.mu.Lock()
-	defer state.mu.Unlock()
-
 	var suffix string
 	if state.Paused {
 		suffix = PauseEmoji
@@ -80,30 +73,11 @@ func (state *PomodoroState) String() string {
 	return fmt.Sprintf("%s %02d:%02d", suffix, minutes, seconds)
 }
 
-// Update continuously monitors the PomodoroState, responding to signals from the Timer and Ticker channels.
-func (state *PomodoroState) Update() {
-	for {
-		select {
-		case <-state.Timer.C:
-			state.Toggle()
-		case <-state.Ticker.C:
-			state.mu.Lock()
-			state.End = state.End.Add(1 * time.Second)
-			state.mu.Unlock()
-		}
-	}
-}
-
 // Pause toggles the paused state of the pomodoro timer
 func (state *PomodoroState) Pause() {
-	state.mu.Lock()
-	defer state.mu.Unlock()
-
 	if state.Paused {
-		state.Ticker.Stop()
 		state.Timer.Reset(state.End.Sub(time.Now()))
 	} else {
-		state.Ticker.Reset(1 * time.Second)
 		state.Timer.Stop()
 	}
 	state.Paused = !state.Paused
@@ -111,9 +85,6 @@ func (state *PomodoroState) Pause() {
 
 // Toggle toggles the pomodoro timer between work and rest status
 func (state *PomodoroState) Toggle() {
-	state.mu.Lock()
-	defer state.mu.Unlock()
-
 	nextStatus := (state.Status + 1) % 2
 	duration := GetDuration(nextStatus)
 
@@ -124,12 +95,11 @@ func (state *PomodoroState) Toggle() {
 
 // Inc increments the pomodoro timer by the given amount
 func (state *PomodoroState) Inc(increment time.Duration) {
-	state.mu.Lock()
-	defer state.mu.Unlock()
-
 	remainingTime := state.End.Sub(time.Now()) + increment
-	state.Timer.Reset(remainingTime)
-	state.End = state.End.Add(increment)
+	state.End = state.End.Add(increment).Round(time.Second)
+	if !state.Paused {
+		state.Timer.Reset(remainingTime)
+	}
 }
 
 // GetDuration returns the duration for the given pomodoro status
@@ -141,7 +111,7 @@ func GetDuration(status PomodoroStatus) time.Duration {
 }
 
 // HandleRequest handles incoming requests over the Unix socket connection
-func HandleRequest(conn *net.UnixConn, state *PomodoroState) {
+func HandleRequest(conn *net.UnixConn, pauseChannel, toggleChannel chan struct{}, incChannel chan time.Duration) {
 	buffer := make([]byte, 128)
 
 	n, err := conn.Read(buffer)
@@ -153,13 +123,13 @@ func HandleRequest(conn *net.UnixConn, state *PomodoroState) {
 
 	switch message {
 	case "pause":
-		state.Pause()
+		pauseChannel <- struct{}{}
 	case "toggle":
-		state.Toggle()
+		toggleChannel <- struct{}{}
 	case "inc":
-		state.Inc(5 * time.Second)
+		incChannel <- +5 * time.Second
 	case "dec":
-		state.Inc(-5 * time.Second)
+		incChannel <- -5 * time.Second
 	}
 }
 
@@ -172,12 +142,6 @@ func main() {
 	// Set Work and Rest Time Perimeters
 	WorkDuration = time.Duration(*wFlag) * time.Minute
 	RestDuration = time.Duration(*rFlag) * time.Minute
-
-	// Create a new PomodoroState instance with initial status
-	state := NewPomodoro(Work, true)
-
-	// Start a new goroutine to continuously update the PomodoroState.
-	go state.Update()
 
 	// Remove existing socket file if it exists
 	if err := os.RemoveAll(SocketPath); err != nil {
@@ -195,6 +159,10 @@ func main() {
 	defer os.Remove(SocketPath)
 
 	// Goroutine function to handle incoming Unix socket connections
+	pauseChannel := make(chan struct{})
+	toggleChannel := make(chan struct{})
+	incChannel := make(chan time.Duration)
+
 	go func() {
 		for {
 			conn, err := listener.AcceptUnix()
@@ -202,14 +170,34 @@ func main() {
 				fmt.Println("Error accepting connection:", err.Error())
 				return
 			}
-			go HandleRequest(conn, state)
+			go HandleRequest(conn, pauseChannel, toggleChannel, incChannel)
 		}
 	}()
 
-	// Main loop to display pomodoro timer status
+	// Create a new PomodoroState instance with initial status
+	state := NewPomodoro(Work, true)
+
+	var inc time.Duration
+
+	// Main loop to update state and display pomodoro time
 	for {
+		select {
+		case <-state.Ticker.C:
+			if state.Paused {
+				state.Inc(1 * time.Second)
+			}
+		case <-state.Timer.C:
+			if !state.Paused {
+				state.Toggle()
+			}
+		case <-pauseChannel:
+			state.Pause()
+		case <-toggleChannel:
+			state.Toggle()
+		case inc = <-incChannel:
+			state.Inc(inc)
+		}
 		statusStr := state.String()
 		fmt.Println(statusStr)
-		time.Sleep(1 * time.Second)
 	}
 }
